@@ -25,6 +25,89 @@ namespace cwt
             }
     };
 
+
+
+    class object_3d 
+    {
+        public:
+            object_3d(glm::vec3 translation, glm::vec3 scale) : m_translation(translation), m_scale(scale) 
+            {
+                m_mesh_list.push_back(create_mesh());
+            }
+
+            void render(glm::mat4 projection, GLuint uniform_model, GLuint uniform_projection)
+            {
+                glm::mat4 model(1.0f);
+                model = glm::translate(model, m_translation);
+                model = glm::scale(model, m_scale);
+                glUniformMatrix4fv(uniform_model, 1, GL_FALSE, glm::value_ptr(model));
+                glUniformMatrix4fv(uniform_projection, 1, GL_FALSE, glm::value_ptr(projection));
+                for (const auto& mesh : m_mesh_list) {
+                    mesh->render();
+                }
+            }
+        private:
+            glm::vec3 m_translation;
+            glm::vec3 m_scale;
+            std::vector<std::unique_ptr<mesh>> m_mesh_list;
+    };
+
+    class scene 
+    {
+        public: 
+            scene(const std::string& name, GLfloat width, GLfloat height) : m_name(name)
+            {
+                m_projection = glm::perspective(45.0f, width/height, 0.1f, 100.0f);
+                m_scenebuffer = std::make_shared<framebuffer>(width, height);
+            }
+            void add_object()
+            {
+                m_objects.push_back(std::make_unique<object_3d>(glm::vec3(0.0f, 0.0f, -2.5f), glm::vec3(0.4f, 0.4f, 1.0f)));
+            }
+            void render(GLuint uniform_model, GLuint uniform_projection)
+            {
+                m_scenebuffer->Bind();
+                
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                glEnable(GL_DEPTH_TEST);
+                
+
+                ImGui::Begin(m_name.c_str());
+
+                float image_width = 500;
+                float image_height = 500;
+
+                m_scenebuffer->RescaleFrameBuffer(image_width, image_height);
+                glViewport(0, 0, image_width, image_height);
+
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+
+                ImGui::GetWindowDrawList()->AddImage(
+                    (void *)m_scenebuffer->getFrameTexture(), 
+                    ImVec2(pos.x, pos.y), 
+                    ImVec2(pos.x + image_width, pos.y + image_height), 
+                    ImVec2(0, 1), 
+                    ImVec2(1, 0)
+                );
+
+                ImGui::End();
+
+                for (const auto& obj : m_objects) {
+                    obj->render(m_projection, uniform_model, uniform_projection);
+                }
+
+                m_scenebuffer->Unbind();
+            }
+
+        private:
+            std::string m_name;
+            glm::mat4 m_projection;
+            std::shared_ptr<framebuffer> m_scenebuffer;
+            std::vector<std::unique_ptr<object_3d>> m_objects;
+    };
+
+
     class editor 
     {
         public:
@@ -80,6 +163,11 @@ namespace cwt
                 }
                 ImGui_ImplGlfw_InitForOpenGL(window, true);
                 ImGui_ImplOpenGL3_Init("#version 330");
+                
+                m_scenes.push_back(std::make_unique<scene>("scene 1", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
+                m_scenes.back()->add_object();
+                m_scenes.push_back(std::make_unique<scene>("scene 2", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
+                m_scenes.back()->add_object();
             }
             ~editor_manager()
             {
@@ -88,106 +176,63 @@ namespace cwt
                 ImGui::DestroyContext();
             }
 
+            void new_frame()
+            {
+                ImGui_ImplOpenGL3_NewFrame();
+                ImGui_ImplGlfw_NewFrame();  
+                ImGui::NewFrame();
+            }
+
             template<typename Editor, typename... Args>
-            void add(Args&&... args)
+            void add_editor(Args&&... args)
             {
                 m_editors.push_back( Editor(std::forward<Args>(args)...) );
             }
             template<typename Editor>
-            void add()
+            void add_editor()
             {
                 m_editors.push_back( Editor{} );
             }
-
-            void render() 
+            template<typename Scene, typename... Args>
+            void add_scene(Args&&... args)
+            {
+                m_scenes.push_back( std::make_unique<Scene>(std::forward<Args>(args)...) );
+            }
+            template<typename Scene>
+            void add_scene()
+            {
+                m_scenes.push_back( std::make_unique<Scene>() );
+            }
+            void render_editors() 
             {
                 for (const auto& e : m_editors){
                     e.render();
                 }
             }
+            void render_scenes(GLuint uniform_model, GLuint uniform_projection)
+            {
+                for (const auto& s : m_scenes) {
+                    s->render(uniform_model, uniform_projection);
+                }
+            }
+
+            void render()
+            {
+                ImGui::Render();
+                ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());	
+                ImGuiIO& io = ImGui::GetIO(); (void)io;
+                if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+                {
+                    GLFWwindow* backup_current_context = glfwGetCurrentContext();
+                    ImGui::UpdatePlatformWindows();
+                    ImGui::RenderPlatformWindowsDefault();
+                    glfwMakeContextCurrent(backup_current_context);
+                }
+            }
 
         private:
             std::vector<editor> m_editors;
-    };
-
-    class object_3d 
-    {
-        public:
-            object_3d(glm::vec3 translation, glm::vec3 scale) : m_translation(translation), m_scale(scale) 
-            {
-                m_mesh_list.push_back(create_mesh());
-            }
-
-            void render(glm::mat4 projection, GLuint uniform_model, GLuint uniform_projection)
-            {
-                glm::mat4 model(1.0f);
-                model = glm::translate(model, m_translation);
-                model = glm::scale(model, m_scale);
-                glUniformMatrix4fv(uniform_model, 1, GL_FALSE, glm::value_ptr(model));
-                glUniformMatrix4fv(uniform_projection, 1, GL_FALSE, glm::value_ptr(projection));
-                for (const auto& mesh : m_mesh_list) {
-                    mesh->render();
-                }
-            }
-        private:
-            glm::vec3 m_translation;
-            glm::vec3 m_scale;
-            std::vector<std::unique_ptr<mesh>> m_mesh_list;
-    };
-
-    class scene 
-    {
-        public: 
-            scene(const std::string& name, GLfloat width, GLfloat height) : m_name(name)
-            {
-                m_projection = glm::perspective(45.0f, width/height, 0.1f, 100.0f);
-                sceneBuffer = std::make_shared<FrameBuffer>(width, height);
-            }
-            void add_object()
-            {
-                m_objects.push_back(std::make_unique<object_3d>(glm::vec3(0.0f, 0.0f, -2.5f), glm::vec3(0.4f, 0.4f, 1.0f)));
-            }
-            void render(GLuint uniform_model, GLuint uniform_projection)
-            {
-                sceneBuffer->Bind();
-                
-                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                glEnable(GL_DEPTH_TEST);
-                
-
-                ImGui::Begin(m_name.c_str());
-
-                float image_width = 500;
-                float image_height = 500;
-
-                sceneBuffer->RescaleFrameBuffer(image_width, image_height);
-                glViewport(0, 0, image_width, image_height);
-
-                ImVec2 pos = ImGui::GetCursorScreenPos();
-
-                ImGui::GetWindowDrawList()->AddImage(
-                    (void *)sceneBuffer->getFrameTexture(), 
-                    ImVec2(pos.x, pos.y), 
-                    ImVec2(pos.x + image_width, pos.y + image_height), 
-                    ImVec2(0, 1), 
-                    ImVec2(1, 0)
-                );
-
-                ImGui::End();
-
-                for (const auto& obj : m_objects) {
-                    obj->render(m_projection, uniform_model, uniform_projection);
-                }
-
-                sceneBuffer->Unbind();
-            }
-
-        private:
-            std::string m_name;
-            glm::mat4 m_projection;
-            std::shared_ptr<FrameBuffer> sceneBuffer;
-            std::vector<std::unique_ptr<object_3d>> m_objects;
+            std::vector<std::unique_ptr<scene>> m_scenes;
     };
 
     class engine 
@@ -207,7 +252,6 @@ namespace cwt
             window m_window; 
             editor_manager m_editor_manager;
             std::vector<std::unique_ptr<shader>> m_shader_list;
-            std::vector<std::unique_ptr<scene>> m_scenes;
     };
 
 
@@ -216,13 +260,9 @@ namespace cwt
         m_window.init();
 
         m_editor_manager.init(m_window.get_window());
-        m_editor_manager.add<test_editor>();
+        m_editor_manager.add_editor<test_editor>();
 
         m_shader_list.push_back(std::make_unique<shader>(vertex_shader_file, fragment_shader_file));
-        m_scenes.push_back(std::make_unique<scene>("scene 1", static_cast<GLfloat>(m_window.get_buffer_width()), static_cast<GLfloat>(m_window.get_buffer_height())));
-        m_scenes.back()->add_object();
-        m_scenes.push_back(std::make_unique<scene>("scene 2", static_cast<GLfloat>(m_window.get_buffer_width()), static_cast<GLfloat>(m_window.get_buffer_height())));
-        m_scenes.back()->add_object();
     }
     engine::~engine()
     {
@@ -246,26 +286,13 @@ namespace cwt
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();  
-        ImGui::NewFrame();
+        m_editor_manager.new_frame();
         
         m_shader_list[0]->use();
-        for (const auto& scene : m_scenes) {
-            scene->render(m_shader_list[0]->get_model_location(), m_shader_list[0]->get_projection_location());
-        }
-        m_editor_manager.render();  
+        m_editor_manager.render_scenes(m_shader_list[0]->get_model_location(), m_shader_list[0]->get_projection_location());  
+        m_editor_manager.render_editors();  
 
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());	
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-        {
-            GLFWwindow* backup_current_context = glfwGetCurrentContext();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(backup_current_context);
-        }
+        m_editor_manager.render();
 
         m_window.swap_buffers();
     }

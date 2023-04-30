@@ -3,12 +3,12 @@
 
 namespace cwt
 {
-	class FrameBuffer
+	class framebuffer
 	{
 	public:
-		FrameBuffer() = default;
-		FrameBuffer(float width, float height);
-		~FrameBuffer();
+		framebuffer() = default;
+		framebuffer(float width, float height);
+		~framebuffer();
 		unsigned int getFrameTexture();
 		void RescaleFrameBuffer(float width, float height);
 		void Bind() const;
@@ -20,9 +20,7 @@ namespace cwt
 	};
 
 
-
-
-	FrameBuffer::FrameBuffer(float width, float height)
+	framebuffer::framebuffer(float width, float height)
 	{
 		glGenFramebuffers(1, &fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -49,19 +47,19 @@ namespace cwt
 		glBindRenderbuffer(GL_RENDERBUFFER, 0);
 	}
 
-	FrameBuffer::~FrameBuffer()
+	framebuffer::~framebuffer()
 	{
 		glDeleteFramebuffers(1, &fbo);
 		glDeleteTextures(1, &texture);
 		glDeleteRenderbuffers(1, &rbo);
 	}
 
-	unsigned int FrameBuffer::getFrameTexture()
+	unsigned int framebuffer::getFrameTexture()
 	{
 		return texture;
 	}
 
-	void FrameBuffer::RescaleFrameBuffer(float width, float height)
+	void framebuffer::RescaleFrameBuffer(float width, float height)
 	{
 		glBindTexture(GL_TEXTURE_2D, texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
@@ -74,12 +72,12 @@ namespace cwt
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 	}
 
-	void FrameBuffer::Bind() const
+	void framebuffer::Bind() const
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 	}
 
-	void FrameBuffer::Unbind() const
+	void framebuffer::Unbind() const
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
