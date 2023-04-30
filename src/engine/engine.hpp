@@ -12,7 +12,6 @@ namespace cwt
     class test_editor 
     {
         public: 
-
             void render()
             {
                 ImGui::Begin("any editor");
@@ -26,7 +25,6 @@ namespace cwt
     };
 
 
-
     class object_3d 
     {
         public:
@@ -34,7 +32,6 @@ namespace cwt
             {
                 m_mesh_list.push_back(create_mesh());
             }
-
             void render(glm::mat4 projection, GLuint uniform_model, GLuint uniform_projection)
             {
                 glm::mat4 model(1.0f);
@@ -75,18 +72,20 @@ namespace cwt
 
                 ImGui::Begin(m_name.c_str());
 
-                float image_width = 500;
-                float image_height = 500;
+                ImVec2 vMin = ImGui::GetWindowContentRegionMin();
+                ImVec2 vMax = ImGui::GetWindowContentRegionMax();
 
-                m_scenebuffer->RescaleFrameBuffer(image_width, image_height);
-                glViewport(0, 0, image_width, image_height);
-
-                ImVec2 pos = ImGui::GetCursorScreenPos();
+                vMin.x += ImGui::GetWindowPos().x;
+                vMin.y += ImGui::GetWindowPos().y;
+                vMax.x += ImGui::GetWindowPos().x;
+                vMax.y += ImGui::GetWindowPos().y;
+                
+                m_scenebuffer->RescaleFrameBuffer(vMax.x-vMin.x, vMax.y-vMin.y);
+                glViewport(0, 0, vMax.x-vMin.x, vMax.y-vMin.y);
 
                 ImGui::GetWindowDrawList()->AddImage(
-                    (void *)m_scenebuffer->getFrameTexture(), 
-                    ImVec2(pos.x, pos.y), 
-                    ImVec2(pos.x + image_width, pos.y + image_height), 
+                    (void *)m_scenebuffer->getFrameTexture(),
+                    vMin, vMax,
                     ImVec2(0, 1), 
                     ImVec2(1, 0)
                 );
@@ -140,11 +139,16 @@ namespace cwt
             std::unique_ptr<editor_concept> m_editor;
     };
 
-    class editor_manager
+    class imgui_manager
     {
-        public: 
-            editor_manager() = default;
-
+        public:
+            imgui_manager() = default;
+            ~imgui_manager()
+            {
+                ImGui_ImplOpenGL3_Shutdown();
+                ImGui_ImplGlfw_Shutdown();
+                ImGui::DestroyContext();
+            }
             void init(GLFWwindow* window)
             {
                 IMGUI_CHECKVERSION();
@@ -163,57 +167,12 @@ namespace cwt
                 }
                 ImGui_ImplGlfw_InitForOpenGL(window, true);
                 ImGui_ImplOpenGL3_Init("#version 330");
-                
-                m_scenes.push_back(std::make_unique<scene>("scene 1", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
-                m_scenes.back()->add_object();
-                m_scenes.push_back(std::make_unique<scene>("scene 2", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
-                m_scenes.back()->add_object();
             }
-            ~editor_manager()
-            {
-                ImGui_ImplOpenGL3_Shutdown();
-                ImGui_ImplGlfw_Shutdown();
-                ImGui::DestroyContext();
-            }
-
             void new_frame()
             {
                 ImGui_ImplOpenGL3_NewFrame();
                 ImGui_ImplGlfw_NewFrame();  
                 ImGui::NewFrame();
-            }
-
-            template<typename Editor, typename... Args>
-            void add_editor(Args&&... args)
-            {
-                m_editors.push_back( Editor(std::forward<Args>(args)...) );
-            }
-            template<typename Editor>
-            void add_editor()
-            {
-                m_editors.push_back( Editor{} );
-            }
-            template<typename Scene, typename... Args>
-            void add_scene(Args&&... args)
-            {
-                m_scenes.push_back( std::make_unique<Scene>(std::forward<Args>(args)...) );
-            }
-            template<typename Scene>
-            void add_scene()
-            {
-                m_scenes.push_back( std::make_unique<Scene>() );
-            }
-            void render_editors() 
-            {
-                for (const auto& e : m_editors){
-                    e.render();
-                }
-            }
-            void render_scenes(GLuint uniform_model, GLuint uniform_projection)
-            {
-                for (const auto& s : m_scenes) {
-                    s->render(uniform_model, uniform_projection);
-                }
             }
 
             void render()
@@ -228,39 +187,53 @@ namespace cwt
                     ImGui::RenderPlatformWindowsDefault();
                     glfwMakeContextCurrent(backup_current_context);
                 }
-            }
-
-        private:
-            std::vector<editor> m_editors;
-            std::vector<std::unique_ptr<scene>> m_scenes;
+            }  
     };
+
 
     class engine 
     {
         public:
             engine();
             ~engine();
-
             bool is_running();
-
             void read_input();
             void update();
-            void render();            
+            void render();
 
         private:
+            void render_editors() 
+            {
+                for (const auto& e : m_editors){
+                    e->render();
+                }
+            }
+            void render_scenes(GLuint uniform_model, GLuint uniform_projection)
+            {
+                for (const auto& s : m_scenes) {
+                    s->render(uniform_model, uniform_projection);
+                }
+            }
         private:
             window m_window; 
-            editor_manager m_editor_manager;
+            imgui_manager m_imgui;
             std::vector<std::unique_ptr<shader>> m_shader_list;
+            std::vector<std::unique_ptr<editor>> m_editors;
+            std::vector<std::unique_ptr<scene>> m_scenes;
     };
 
 
     engine::engine() 
     {
         m_window.init();
+        m_imgui.init(m_window.get_window());
+        
+        m_editors.push_back(std::make_unique<editor>(test_editor{}));
 
-        m_editor_manager.init(m_window.get_window());
-        m_editor_manager.add_editor<test_editor>();
+        m_scenes.push_back(std::make_unique<scene>("scene 1", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
+        m_scenes.back()->add_object();
+        m_scenes.push_back(std::make_unique<scene>("scene 2", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
+        m_scenes.back()->add_object();
 
         m_shader_list.push_back(std::make_unique<shader>(vertex_shader_file, fragment_shader_file));
     }
@@ -286,14 +259,13 @@ namespace cwt
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
 
-        m_editor_manager.new_frame();
+        m_imgui.new_frame();
         
         m_shader_list[0]->use();
-        m_editor_manager.render_scenes(m_shader_list[0]->get_model_location(), m_shader_list[0]->get_projection_location());  
-        m_editor_manager.render_editors();  
+        render_scenes(m_shader_list[0]->get_model_location(), m_shader_list[0]->get_projection_location());  
+        render_editors();  
 
-        m_editor_manager.render();
-
+        m_imgui.render();
         m_window.swap_buffers();
     }
 } // namespace cwt
