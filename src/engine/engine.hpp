@@ -52,7 +52,6 @@ namespace cwt
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 glEnable(GL_DEPTH_TEST);
                 
-                ImGui::SetWindowSize(ImVec2(m_width, m_width));
                 ImGui::Begin(m_name.c_str());
 
                 ImVec2 min = ImGui::GetWindowContentRegionMin();
