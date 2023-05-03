@@ -8,23 +8,6 @@
 
 namespace cwt
 {
-
-    class test_editor 
-    {
-        public: 
-            void render()
-            {
-                ImGui::Begin("any editor");
-
-                ImGui::End();
-
-                ImGui::Begin("anotherr");
-
-                ImGui::End();
-            }
-    };
-
-
     class object_3d 
     {
         public:
@@ -52,7 +35,7 @@ namespace cwt
     class scene 
     {
         public: 
-            scene(const std::string& name, GLfloat width, GLfloat height) : m_name(name)
+            scene(const std::string& name, GLfloat width, GLfloat height) : m_name(name), m_width(width), m_height(height)
             {
                 m_projection = glm::perspective(45.0f, width/height, 0.1f, 100.0f);
                 m_scenebuffer = std::make_shared<framebuffer>(width, height);
@@ -69,23 +52,25 @@ namespace cwt
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 glEnable(GL_DEPTH_TEST);
                 
-
+                ImGui::SetWindowSize(ImVec2(m_width, m_width));
                 ImGui::Begin(m_name.c_str());
 
-                ImVec2 vMin = ImGui::GetWindowContentRegionMin();
-                ImVec2 vMax = ImGui::GetWindowContentRegionMax();
+                ImVec2 min = ImGui::GetWindowContentRegionMin();
+                ImVec2 max = ImGui::GetWindowContentRegionMax();
+                min.x += ImGui::GetWindowPos().x;
+                min.y += ImGui::GetWindowPos().y;
+                max.x += ImGui::GetWindowPos().x;
+                max.y += ImGui::GetWindowPos().y;
 
-                vMin.x += ImGui::GetWindowPos().x;
-                vMin.y += ImGui::GetWindowPos().y;
-                vMax.x += ImGui::GetWindowPos().x;
-                vMax.y += ImGui::GetWindowPos().y;
-                
-                m_scenebuffer->RescaleFrameBuffer(vMax.x-vMin.x, vMax.y-vMin.y);
-                glViewport(0, 0, vMax.x-vMin.x, vMax.y-vMin.y);
+                m_width = max.x-min.x;
+                m_height = max.y-min.y;
+
+                m_scenebuffer->RescaleFrameBuffer(m_width, m_height);
+                glViewport(0, 0, m_width, m_height);
 
                 ImGui::GetWindowDrawList()->AddImage(
                     (void *)m_scenebuffer->getFrameTexture(),
-                    vMin, vMax,
+                    min, max,
                     ImVec2(0, 1), 
                     ImVec2(1, 0)
                 );
@@ -101,43 +86,47 @@ namespace cwt
 
         private:
             std::string m_name;
+            GLfloat m_width; 
+            GLfloat m_height;
             glm::mat4 m_projection;
             std::shared_ptr<framebuffer> m_scenebuffer;
             std::vector<std::unique_ptr<object_3d>> m_objects;
     };
 
-
-    class editor 
-    {
-        public:
-            template<typename ConcreteEditor> 
-            editor(ConcreteEditor&& concrete_editor) 
-            {
-                m_editor = std::make_unique<editor_model<ConcreteEditor>>(std::move(concrete_editor));
-            }
-
-            void render() const
-            {
-                m_editor->render();
-            }
-        private:
-            struct editor_concept{
-                virtual ~editor_concept() {}
-                virtual void render() = 0;
-            };
-            template<typename ConcreteEditor> 
-            struct editor_model : public editor_concept
-            {
-                editor_model(const ConcreteEditor& e) : m_editor(e) {}
-                void render() {
-                    m_editor.render();
+    namespace details {
+        class editor 
+        {
+            public:
+                template<typename ConcreteEditor> 
+                editor(ConcreteEditor&& concrete_editor) 
+                {
+                    m_editor = std::make_unique<editor_model<ConcreteEditor>>(std::move(concrete_editor));
                 }
-                ConcreteEditor m_editor;
-            };
 
-        private:
-            std::unique_ptr<editor_concept> m_editor;
-    };
+                void render() const
+                {
+                    m_editor->render();
+                }
+            private:
+                struct editor_concept{
+                    virtual ~editor_concept() {}
+                    virtual void render() = 0;
+                };
+                template<typename ConcreteEditor> 
+                struct editor_model : public editor_concept
+                {
+                    editor_model(const ConcreteEditor& e) : m_editor(e) {}
+                    void render() {
+                        m_editor.render();
+                    }
+                    ConcreteEditor m_editor;
+                };
+
+            private:
+                std::unique_ptr<editor_concept> m_editor;
+        };
+    }
+
 
     class imgui_manager
     {
@@ -157,7 +146,8 @@ namespace cwt
                 io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; 
                 io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
                 io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; 
-
+                io.ConfigWindowsMoveFromTitleBarOnly = true;
+                
                 ImGui::StyleColorsDark();
                 ImGuiStyle& style = ImGui::GetStyle();
                 if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
@@ -201,6 +191,13 @@ namespace cwt
             void update();
             void render();
 
+            // TODO concept for Editor
+            template<typename Editor, typename... Args> 
+            void attach_editor(Args&&... args)
+            {
+                m_editors.push_back(std::make_unique<details::editor>(Editor{std::forward<Args>(args)...}));
+            }
+            
         private:
             void render_editors() 
             {
@@ -218,7 +215,7 @@ namespace cwt
             window m_window; 
             imgui_manager m_imgui;
             std::vector<std::unique_ptr<shader>> m_shader_list;
-            std::vector<std::unique_ptr<editor>> m_editors;
+            std::vector<std::unique_ptr<details::editor>> m_editors;
             std::vector<std::unique_ptr<scene>> m_scenes;
     };
 
@@ -228,9 +225,7 @@ namespace cwt
         m_window.init();
         m_imgui.init(m_window.get_window());
         
-        m_editors.push_back(std::make_unique<editor>(test_editor{}));
-
-        m_scenes.push_back(std::make_unique<scene>("scene 1", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
+        m_scenes.push_back(std::make_unique<scene>("scene 1", static_cast<GLfloat>(10.0f), static_cast<GLfloat>(2.0f)));
         m_scenes.back()->add_object();
         m_scenes.push_back(std::make_unique<scene>("scene 2", static_cast<GLfloat>(800.0f), static_cast<GLfloat>(600.0f)));
         m_scenes.back()->add_object();

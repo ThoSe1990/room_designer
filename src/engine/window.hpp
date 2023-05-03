@@ -44,6 +44,7 @@ namespace cwt
             glViewport(0, 0, m_buffer_width, m_buffer_height);
             glfwSetWindowUserPointer(m_window, this);  
 
+            glfwHideWindow(m_window);
 
             return 0;
         }
@@ -59,8 +60,8 @@ namespace cwt
         GLFWwindow* get_window() { return m_window; }
     private:
         GLFWwindow* m_window;
-        GLint m_width{800};
-        GLint m_height{600};
+        GLint m_width{1};
+        GLint m_height{1};
         GLint m_buffer_width;
         GLint m_buffer_height;
     };
